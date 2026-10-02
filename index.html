@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SWP Business Data</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial;background:#f3f6fa;color:#14213d}.top{background:#071a33;color:#fff;padding:24px}.top h1{margin:0;color:#d7b15d}.wrap{max-width:1450px;margin:auto;padding:20px}.card{background:#fff;border-radius:14px;padding:18px;box-shadow:0 4px 20px #0001;margin-bottom:18px}.filters{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}label{font-weight:bold}select,input,button{width:100%;padding:11px;border:1px solid #ccd4df;border-radius:8px;margin-top:6px}button{background:#0b2b50;color:white;font-weight:bold;cursor:pointer}.gold{background:#b88b35}.danger{background:#7b2632}.status{padding:12px;background:#eef4fb;border-radius:8px;margin-top:12px}table{width:100%;border-collapse:collapse;min-width:1100px}th,td{padding:9px;border-bottom:1px solid #e2e6ec;text-align:right}th{background:#0b2b50;color:#fff;position:sticky;top:0}.table{overflow:auto;max-height:58vh}.actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:14px}@media(max-width:800px){.filters,.actions{grid-template-columns:1fr}}
+</style></head><body>
+<div class="top"><div class="wrap"><h1>SWP Business Data</h1><div>برنامج البحث وتجميع بيانات الشركات</div></div></div>
+<div class="wrap">
+<div class="card"><div class="filters">
+<label>الدولة<select id="country"></select></label>
+<label>المحافظة / الولاية<select id="region"></select></label>
+<label>النشاط<select id="activity"></select></label>
+<label>كلمة إضافية<input id="keyword" placeholder="اختياري"></label>
+</div><div class="actions"><button onclick="search()">بحث وجلب البيانات</button><button class="danger" onclick="clearRows()">مسح النتائج</button><button class="gold" onclick="exportCSV()">تصدير Excel / CSV</button></div>
+<div class="status" id="status">جاهز للبحث.</div></div>
+<div class="card"><b id="count">النتائج: 0</b><div class="table"><table><thead><tr><th>الدولة</th><th>المحافظة</th><th>اسم الشركة</th><th>النشاط</th><th>الإيميل</th><th>التليفون</th><th>الموبايل</th><th>الموقع</th></tr></thead><tbody id="body"></tbody></table></div></div>
+</div>
+<script>
+/* بعد نشر Backend على Render ضع رابطه هنا بدون / في النهاية */
+const API_BASE="https://swp-business-data-api-production-3e9f.up.railway.app";
+
+const geo={
+ EG:{n:"مصر",r:["القاهرة","الجيزة","الإسكندرية","الدقهلية","البحر الأحمر","البحيرة","الفيوم","الغربية","الإسماعيلية","المنوفية","المنيا","القليوبية","الوادي الجديد","السويس","أسوان","أسيوط","بني سويف","بورسعيد","دمياط","الشرقية","جنوب سيناء","كفر الشيخ","مطروح","الأقصر","قنا","شمال سيناء","سوهاج"]},
+ SA:{n:"السعودية",r:["الرياض","مكة المكرمة","المدينة المنورة","القصيم","المنطقة الشرقية","عسير","تبوك","حائل","الحدود الشمالية","جازان","نجران","الباحة","الجوف"]},
+ AE:{n:"الإمارات",r:["أبوظبي","دبي","الشارقة","عجمان","أم القيوين","رأس الخيمة","الفجيرة"]},
+ KW:{n:"الكويت",r:["العاصمة","حولي","الفروانية","مبارك الكبير","الأحمدي","الجهراء"]},
+ QA:{n:"قطر",r:["الدوحة","الريان","الوكرة","أم صلال","الخور والذخيرة","الشمال","الظعاين","الشحانية"]},
+ BH:{n:"البحرين",r:["العاصمة","المحرق","الشمالية","الجنوبية"]},
+ OM:{n:"عُمان",r:["مسقط","ظفار","مسندم","البريمي","الداخلية","شمال الباطنة","جنوب الباطنة","شمال الشرقية","جنوب الشرقية","الظاهرة","الوسطى"]},
+ JO:{n:"الأردن",r:["عمان","إربد","الزرقاء","البلقاء","المفرق","الكرك","جرش","مادبا","عجلون","العقبة","معان","الطفيلة"]},
+ DE:{n:"ألمانيا",r:[]},GB:{n:"المملكة المتحدة",r:[]},US:{n:"الولايات المتحدة",r:[]},CA:{n:"كندا",r:[]},AR:{n:"الأرجنتين",r:[]},TR:{n:"تركيا",r:[]},GE:{n:"جورجيا",r:[]},ET:{n:"إثيوبيا",r:[]},ZA:{n:"جنوب أفريقيا",r:[]},IN:{n:"الهند",r:[]},CN:{n:"الصين",r:[]}
+};
+const acts=[["صيدليات","pharmacy"],["مستشفيات ومراكز طبية","hospital"],["مطاعم وكافيهات","restaurant"],["فنادق","hotel"],["بنوك","bank"],["محاسبة ومراجعة","accounting"],["محاماة وخدمات قانونية","legal"],["عقارات","real_estate"],["سيارات وقطع غيار","car"],["سوبر ماركت","supermarket"],["تقنية معلومات","it"],["سياحة وسفر","travel"]];
+let rows=[];
+const $=id=>document.getElementById(id),esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function init(){
+ $("country").innerHTML='<option value="">اختر الدولة</option>'+Object.entries(geo).map(([k,v])=>`<option value="${k}">${v.n}</option>`).join("");
+ $("activity").innerHTML='<option value="">اختر النشاط</option>'+acts.map(a=>`<option value="${a[1]}">${a[0]}</option>`).join("");
+ $("country").onchange=regions; regions();
+}
+function regions(){const g=geo[$("country").value];$("region").innerHTML='<option value="">كل المحافظات / الولايات</option>'+((g?.r||[]).map(x=>`<option>${x}</option>`).join(""))}
+function render(){ $("count").textContent="النتائج: "+rows.length;$("body").innerHTML=rows.map(r=>`<tr><td>${esc(r.country)}</td><td>${esc(r.region)}</td><td>${esc(r.name)}</td><td>${esc(r.activity)}</td><td>${esc(r.email)}</td><td>${esc(r.phone)}</td><td>${esc(r.mobile)}</td><td>${r.website?`<a target="_blank" href="${esc(r.website)}">فتح</a>`:""}</td></tr>`).join("")}
+async function search(){
+ if(API_BASE.includes("PUT_YOUR")){alert("ضع رابط Backend في API_BASE أولاً");return}
+ const cc=$("country").value,activity=$("activity").value;if(!cc||!activity){alert("اختر الدولة والنشاط");return}
+ $("status").textContent="جارٍ الاتصال بمحرك البحث...";
+ const p=new URLSearchParams({country:cc,countryName:geo[cc].n,region:$("region").value,activity,keyword:$("keyword").value});
+ try{const r=await fetch(API_BASE+"/api/search?"+p);const d=await r.json();if(!r.ok)throw Error(d.error||("HTTP "+r.status));rows=d.results||[];render();$("status").textContent=`اكتمل البحث: ${rows.length} نتيجة${d.cached?" (من الذاكرة المؤقتة)":""}.`+(d.warnings?.length?" بعض المصادر لم تستجب وتم الاحتفاظ بالنتائج المتاحة.":"")}
+ catch(e){$("status").textContent="تعذر الاتصال بالـ API: "+e.message}
+}
+function clearRows(){rows=[];render();$("status").textContent="تم مسح النتائج."}
+function exportCSV(){if(!rows.length){alert("لا توجد بيانات");return}const h=["الدولة","المحافظة","اسم الشركة","النشاط","الإيميل","التليفون","الموبايل","الموقع"],q=v=>'"'+String(v??"").replace(/"/g,'""')+'"',csv="\uFEFF"+[h,...rows.map(r=>[r.country,r.region,r.name,r.activity,r.email,r.phone,r.mobile,r.website])].map(x=>x.map(q).join(",")).join("\r\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));a.download="SWP_Business_Data.csv";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+init();
+</script></body></html>
