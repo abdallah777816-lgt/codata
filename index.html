@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SWP Business Data</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;background:#f4f7fb;color:#14213d}.top{background:#102542;color:#fff;padding:22px 5%;display:flex;justify-content:space-between;align-items:center;gap:15px}.brand{font-size:24px;font-weight:700}.brand span{color:#d4af37}.wrap{max-width:1500px;margin:28px auto;padding:0 22px}.card{background:#fff;border-radius:16px;box-shadow:0 8px 30px #17365d18;padding:22px;margin-bottom:20px}.filters{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.field label{display:block;font-weight:700;margin-bottom:8px}.field select,.field input{width:100%;padding:12px;border:1px solid #d7dfeb;border-radius:9px;background:#fff}.actions{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}button{border:0;border-radius:9px;padding:12px 20px;font-weight:700;cursor:pointer}.primary{background:#102542;color:#fff}.gold{background:#d4af37;color:#102542}.light{background:#eaf0f7;color:#102542}.danger{background:#8f2633;color:#fff}.status{padding:12px;border-radius:9px;background:#f7f9fc;margin-top:15px;line-height:1.8}.tablebox{overflow:auto;max-height:58vh}table{width:100%;border-collapse:collapse;min-width:1150px}th{position:sticky;top:0;background:#102542;color:#fff;padding:12px;text-align:right;z-index:1}td{padding:11px;border-bottom:1px solid #edf0f5;white-space:nowrap}tr:hover{background:#faf7ed}.footer{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}.count{font-weight:700}.note{font-size:12px;color:#667085;margin-top:8px}.spinner{display:inline-block;width:14px;height:14px;border:2px solid #ccd4df;border-top-color:#102542;border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-left:6px}@keyframes spin{to{transform:rotate(360deg)}}@media(max-width:900px){.filters{grid-template-columns:1fr 1fr}}@media(max-width:550px){.filters{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}}
+</style>
+</head>
+<body>
+<header class="top"><div class="brand"><span>SWP</span> Business Data</div><div>برنامج بيانات الشركات</div></header>
+<main class="wrap">
+<section class="card">
+<div class="filters">
+<div class="field"><label>الدولة</label><select id="country"><option>جاري تحميل الدول...</option></select></div>
+<div class="field"><label>المحافظة / الولاية</label><select id="region"><option value="">اختر الدولة أولاً</option></select></div>
+<div class="field"><label>النشاط</label><select id="activity"></select></div>
+<div class="field"><label>كلمة بحث إضافية</label><input id="keyword" placeholder="اسم/كلمة إضافية - اختياري"></div>
+</div>
+<div class="actions"><button class="primary" id="searchBtn" onclick="searchCompanies()">بحث وجلب البيانات</button><button class="danger" id="stopBtn" onclick="stopSearch()" disabled>إيقاف البحث</button><button class="light" onclick="clearRows()">مسح النتائج</button></div>
+<div class="status" id="status">جاهز. هذه النسخة تعمل مباشرة على GitHub Pages ولا تحتاج server.js.</div>
+<div class="note">النتائج تعتمد على البيانات العامة المنشورة في OpenStreetMap؛ البريد أو الهاتف قد يكون فارغًا إذا لم يكن منشورًا في المصدر.</div>
+</section>
+<section class="card"><div class="tablebox"><table id="grid"><thead><tr><th>الدولة</th><th>المحافظة</th><th>اسم الشركة</th><th>النشاط</th><th>الإيميل</th><th>التليفون</th><th>الموبايل</th><th>الموقع الإلكتروني</th><th>المصدر</th></tr></thead><tbody></tbody></table></div></section>
+<section class="card footer"><div class="count" id="count">عدد الشركات: 0</div><div class="actions" style="margin:0"><button class="gold" onclick="exportExcel()">تصدير Excel</button></div></section>
+</main>
+<script>
+'use strict';
+let rows=[], activeController=null;
+const $=id=>document.getElementById(id);
+const activities=[
+ ['كل الأنشطة',''],['محاسبة ومراجعة','office=accountant'],['محاماة وخدمات قانونية','office=lawyer'],['مقاولات وإنشاءات','office=construction_company'],['عقارات','office=estate_agent'],['برمجيات وتقنية معلومات','office=it'],['استشارات','office=consulting'],['تأمين','office=insurance'],['مطاعم','amenity=restaurant'],['مقاهي وكافيهات','amenity=cafe'],['صيدليات','amenity=pharmacy'],['مستشفيات','amenity=hospital'],['عيادات ومراكز طبية','amenity=clinic'],['بنوك','amenity=bank'],['مدارس','amenity=school'],['جامعات','amenity=university'],['فنادق','tourism=hotel'],['سوبر ماركت','shop=supermarket'],['ملابس','shop=clothes'],['إلكترونيات','shop=electronics'],['أثاث','shop=furniture'],['سيارات','shop=car'],['قطع غيار سيارات','shop=car_parts'],['مخابز','shop=bakery'],['مجوهرات','shop=jewelry'],['موبايلات واتصالات','shop=mobile_phone'],['أجهزة منزلية','shop=appliance'],['طباعة','shop=copyshop'],['شحن ولوجستيات','office=logistics'],['سياحة وسفر','shop=travel_agency'],['مصانع','man_made=works'],['مخازن','building=warehouse']
+];
+const endpoints=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://overpass.nchc.org.tw/api/interpreter'];
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function timeoutFetch(url,opt={},ms=25000){const c=new AbortController();const timer=setTimeout(()=>c.abort(),ms);if(activeController){activeController.signal.addEventListener('abort',()=>c.abort(),{once:true});}return fetch(url,{...opt,signal:c.signal}).finally(()=>clearTimeout(timer));}
+async function init(){
+ $('activity').innerHTML=activities.map(([n,v])=>`<option value="${esc(v)}">${esc(n)}</option>`).join('');
+ try{
+   const r=await timeoutFetch('https://restcountries.com/v3.1/all?fields=name,cca2,translations',{},20000); if(!r.ok)throw new Error('تعذر الاتصال بخدمة الدول');
+   const data=await r.json();
+   const list=data.map(c=>({code:c.cca2,en:c.name.common,ar:c.translations?.ara?.common||c.name.common})).sort((a,b)=>a.ar.localeCompare(b.ar,'ar'));
+   $('country').innerHTML='<option value="">اختر الدولة</option>'+list.map(c=>`<option value="${esc(c.code)}" data-en="${esc(c.en)}" data-ar="${esc(c.ar)}">${esc(c.ar)}</option>`).join('');
+   $('status').textContent='تم تحميل الدول. اختر الدولة ثم المحافظة والنشاط.';
+ }catch(e){$('country').innerHTML='<option value="">تعذر تحميل الدول - أعد فتح الصفحة</option>';$('status').textContent='تعذر تحميل قائمة الدول: '+e.message;}
+}
+$('country').addEventListener('change',loadRegions);
+async function loadRegions(){
+ const s=$('country'),o=s.options[s.selectedIndex]; const country=o?.dataset.en||'';
+ $('region').innerHTML='<option value="">جاري تحميل المحافظات...</option>';
+ if(!country){$('region').innerHTML='<option value="">اختر الدولة أولاً</option>';return;}
+ try{
+   const r=await timeoutFetch('https://countriesnow.space/api/v0.1/countries/states',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({country})},20000);
+   if(!r.ok)throw new Error('تعذر تحميل المحافظات'); const d=await r.json(); const states=d?.data?.states||[];
+   $('region').innerHTML='<option value="">كل المحافظات / الولايات</option>'+states.map(x=>`<option value="${esc(x.name)}">${esc(x.name)}</option>`).join('');
+ }catch(e){$('region').innerHTML='<option value="">كل المحافظات / الولايات</option>';$('status').textContent='لم تُحمّل المحافظات من الخدمة الخارجية؛ يمكنك البحث على مستوى الدولة.';}
+}
+function osmFilter(){
+ const v=$('activity').value;
+ if(!v) return '[name]';
+ const [k,val]=v.split('='); return `["${k}"="${val}"]`;
+}
+function buildQuery(code,region){
+ const filter=osmFilter(); const safeRegion=(region||'').replace(/["\\]/g,'');
+ let area=`area["ISO3166-1"="${code}"][admin_level="2"]->.country;`;
+ let target='.country';
+ if(safeRegion){area+=`area(area.country)["boundary"="administrative"]["name"="${safeRegion}"]->.region;`;target='.region';}
+ return `[out:json][timeout:45];${area}(nwr${filter}(area${target}););out center tags 500;`;
+}
+async function overpass(query){
+ let lastErr;
+ for(const ep of endpoints){
+   try{
+     $('status').innerHTML=`<span class="spinner"></span> جاري الاتصال بمصدر البيانات...`;
+     const r=await timeoutFetch(ep,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:'data='+encodeURIComponent(query)},55000);
+     if(!r.ok)throw new Error('HTTP '+r.status); return await r.json();
+   }catch(e){lastErr=e;if(e.name==='AbortError'&&activeController?.signal.aborted)throw e;}
+ }
+ throw lastErr||new Error('تعذر الاتصال بمصادر البحث');
+}
+function pick(t,...keys){for(const k of keys)if(t?.[k])return t[k];return '';}
+function classify(t){return pick(t,'name:ar','name')||'';}
+async function searchCompanies(){
+ const cs=$('country'),co=cs.options[cs.selectedIndex]; if(!cs.value){alert('اختر الدولة أولاً');return;}
+ stopSearch(); activeController=new AbortController(); $('searchBtn').disabled=true;$('stopBtn').disabled=false;
+ const country=co.dataset.ar||co.text, region=$('region').value, activityText=$('activity').options[$('activity').selectedIndex].text, keyword=$('keyword').value.trim().toLowerCase();
+ try{
+   const d=await overpass(buildQuery(cs.value,region)); const seen=new Set();
+   rows=(d.elements||[]).map(el=>{
+     const t=el.tags||{}, company=classify(t); if(!company)return null;
+     const website=pick(t,'website','contact:website','url'), email=pick(t,'email','contact:email'), phone=pick(t,'phone','contact:phone'), mobile=pick(t,'mobile','contact:mobile');
+     const hay=(company+' '+Object.values(t).join(' ')).toLowerCase(); if(keyword&&!hay.includes(keyword))return null;
+     const key=(company+'|'+phone+'|'+website).toLowerCase();if(seen.has(key))return null;seen.add(key);
+     return {country,region:region||pick(t,'addr:state','addr:province','addr:region'),company,activity:activityText,email,phone,mobile,website,source:'OpenStreetMap'};
+   }).filter(Boolean);
+   render(); $('status').textContent=`تم تحميل ${rows.length} نتيجة متاحة. المصدر يعرض البيانات العامة المنشورة فقط.`;
+ }catch(e){$('status').textContent=e.name==='AbortError'?'تم إيقاف البحث.':'تعذر إكمال البحث الآن. جرّب مرة أخرى أو اختر نطاقًا/نشاطًا أكثر تحديدًا. '+e.message;}
+ finally{$('searchBtn').disabled=false;$('stopBtn').disabled=true;activeController=null;}
+}
+function stopSearch(){if(activeController){activeController.abort();activeController=null;}$('searchBtn').disabled=false;$('stopBtn').disabled=true;}
+function render(){const tb=document.querySelector('#grid tbody');tb.innerHTML=rows.map(r=>`<tr>${['country','region','company','activity','email','phone','mobile','website','source'].map(k=>`<td>${esc(r[k])}</td>`).join('')}</tr>`).join('');$('count').textContent='عدد الشركات: '+rows.length;}
+function clearRows(){stopSearch();rows=[];render();$('status').textContent='تم مسح النتائج.';}
+function exportExcel(){
+ if(!rows.length){alert('لا توجد بيانات للتصدير');return;}
+ const data=rows.map(r=>({'الدولة':r.country,'المحافظة':r.region,'اسم الشركة':r.company,'النشاط':r.activity,'الإيميل':r.email,'التليفون':r.phone,'الموبايل':r.mobile,'الموقع الإلكتروني':r.website,'المصدر':r.source}));
+ if(window.XLSX){const ws=XLSX.utils.json_to_sheet(data);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Companies');XLSX.writeFile(wb,'SWP_Companies.xlsx');return;}
+ const headers=Object.keys(data[0]);const csv='\ufeff'+[headers,...data.map(o=>headers.map(h=>o[h]??''))].map(a=>a.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='SWP_Companies.csv';a.click();URL.revokeObjectURL(a.href);
+}
+init();
+</script>
+</body></html>
